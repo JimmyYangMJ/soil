@@ -1,11 +1,16 @@
 package com_receive;
 
+/**
+ * AD数据Dao层--AD表显示
+ */
 public class DataAD {
+
     private Integer id;
     private String node; //节点
     private String AD; //AD值
     private String baseAD; //基准电压
     private String time; //时间
+
     public Integer getId() {
         return id;
     }

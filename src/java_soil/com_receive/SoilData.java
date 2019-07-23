@@ -1,9 +1,10 @@
 package com_receive;
 
+/**
+ * 土壤数据Dao层--存入数据库
+ */
 public class SoilData {
-    /**
-     * 土壤水势信息
-     */
+
     private Integer Id;
     private Double Data;
     private String Init_time;

@@ -1,9 +1,10 @@
 package com_receive;
 
+/**
+ * AD数据Dao层--存入数据库
+ */
 public class DataBean {
-    /**
-     * AD信息 （存入数据库）
-     */
+
     private Integer id; //主码
     //private String node;
     private String data; //数据 格式:  1;1254;1234

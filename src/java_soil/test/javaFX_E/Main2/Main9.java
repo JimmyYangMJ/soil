@@ -52,6 +52,4 @@ public class Main9 extends Application {
 
         System.out.println(message);
     }
-
-
 }

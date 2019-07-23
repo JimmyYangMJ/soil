@@ -1,10 +1,10 @@
 package javaFX;
 
-import SQL.MySql_operate;
+import Port.PortSet;
 import com_receive.DataAD;
+import com_receive.DataDao;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
 import javafx.embed.swing.SwingNode;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -23,14 +23,14 @@ import javafx.stage.Stage;
 
 
 import java.io.IOException;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Locale;
 
 import Port.PortText;
-import jfreechart.JfreeLineChart;
-import org.jfree.chart.ChartPanel;
+//import jfreechart.JfreeLineChart;
+import static javaFX.java_FX_Chart.*;
 
-import static javaFX.java_FX_Chart.series1;
 
 /**
  * @author YMj
@@ -43,27 +43,36 @@ public class com_FX extends Application { //implements Runnable
     private SwingNode node=new SwingNode(); //建一个SwingNode组件
 
     static TextArea textArea = new TextArea(); //文本框
-    TextField comSentText = new TextField();
+    TextField TFcomSentText = new TextField();
+    TextField TFcomSentTimeInterval = new TextField();
 
-    static Thread ChartThear = new Thread(new JfreeLineChart(JfreeLineChart.getJFreeChart())); //JfreeLineChart
+//    static Thread ChartThear = new Thread(new JfreeLineChart(JfreeLineChart.getJFreeChart())); //JfreeLineChart暂不实现
     static TableView<DataAD> tableView; //AD 表
+    static TableView<DataAD> RealTableViewClean;
+    static TableView<DataAD> HistoryTableViewShow;
 
     Button checkPort, choiceCom, startReceive,closeCom; //端口
-    Button ChoiceTime, comSent;
+    Button ChoiceTime, comSent, vertify;
 
+    Thread javaFXLine ;
     VBox vBox;
 
     CategoryAxis xAxis;
     NumberAxis yAxis;
     LineChart<String,Number> lineChart;
 
-    static ADTable adTable ;
-    ObservableList<DataAD> list;
+    static ADTable RealADTable = new ADTable();
+    static ADTable HistoryADTable = new ADTable();
+
 
     public com_FX() {
         super();
     }
 
+    @Override
+    public void init(){
+
+    }
     /**
      * 输出文本框消息
      * @param st
@@ -97,19 +106,52 @@ public class com_FX extends Application { //implements Runnable
     }//接收端口选择
 
     /**
+     * 设置节点 间隔 发送的时间
+     * @return VBox
+     */
+    public VBox VBTimeIntervalSet(){
+        vBox = new VBox(5);
+        Text text = new Text(2,20,"间隔时间"); //提示文本
+
+        vertify = new Button("确认时间"); //回传数据
+        vertify.setOnAction(e -> TimeInterval(TFcomSentTimeInterval, TFcomSentTimeInterval.getText()));
+
+        vBox.setPadding(new Insets(0, 20, 20, 2));
+        vBox.getChildren().addAll(text, TFcomSentTimeInterval, vertify);
+        return vBox;
+    }
+
+    /**
+     * 设置时间间隔
+     * @param time
+     * @param text
+     */
+    private void TimeInterval(TextField time, String text) {
+        int timeInterval = Integer.parseInt(text);
+        while(true){
+            try {
+                Thread.sleep(1000 * timeInterval);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            ComSent(null,"1");
+        }
+    }
+
+    /**
      * 相关结点回传数据 VBComBackNode()
      * @return VBox
      */
     public VBox VBComBackNode(){
-        vBox = new VBox(5);
+        vBox = new VBox(2);
 
         Text text = new Text(2,20,"选择节点回传数据"); //提示文本
 
         comSent = new Button("回传数据"); //回传数据
-        comSent.setOnAction( e -> ComSent(comSentText, comSentText.getText()) );
+        comSent.setOnAction( e -> ComSent(TFcomSentText, TFcomSentText.getText()) );
 
         vBox.setPadding(new Insets(0, 20, 20, 2));
-        vBox.getChildren().addAll(text,comSentText,comSent);
+        vBox.getChildren().addAll(text, TFcomSentText,comSent);
         return vBox;
     }//相关结点回传数据
 
@@ -141,11 +183,14 @@ public class com_FX extends Application { //implements Runnable
         checkPort.getStyleClass().add("button-blue"); //css样式
         checkPort.setOnAction(e -> port.StartComClicked()); //识别可用端口 时间响应
 
+        GridPane GPportSet = PortSet.Portsets(); //串口参数配置
         VBox VBoxCom = VBComChoose();  //增加选择端口组件
         VBox VBoxComState = VBComONAndOFF(); //端口状态
         VBox VBoxsent = VBComBackNode(); //增加回传数据组件
+        VBox VBoxTime = VBTimeIntervalSet();//设置回传间隔时间
+
         /*事件监听*/
-        hBox.getChildren().addAll(checkPort, VBoxCom, VBoxComState, VBoxsent);
+        hBox.getChildren().addAll(checkPort, GPportSet, VBoxCom, VBoxComState, VBoxsent, VBoxTime);
         return hBox;
     }//顶部视图
 
@@ -175,15 +220,25 @@ public class com_FX extends Application { //implements Runnable
      * @return VBox
      */
     public VBox VBoxRightView(){
-        VBox vBox = new VBox();
+        VBox vBox = new VBox(20);
         vBox.setStyle("-fx-padding: 10;");
 
-        ADTable(); //AD数据表格显示
-        /**********暂停和开始**********/
+        Label realTimeLabel = new Label("实时AD数据:");
+        TableView<DataAD> RealTableView = ADTable(); //AD数据表格显示
+        RealADTable.setRealList(FXCollections.observableArrayList());
+        RealTableView.setItems(RealADTable.getRealList()); //表格中插入数据
+
+        RealTableViewClean = RealTableView;
+        //暂停 和 开始
         HBox hbStartAndSuspend = HBStartAndSuspend();
 
-        vBox.getChildren().addAll(tableView);
+        Label historyTimeLabel = new Label("历史AD数据:");
+        TableView<DataAD> HistoryTableView = ADTable(); //历史记录
+        HistoryTableViewShow = HistoryTableView;
+
+        vBox.getChildren().addAll(realTimeLabel, RealTableView);
         vBox.getChildren().addAll(hbStartAndSuspend);
+        vBox.getChildren().addAll(historyTimeLabel, HistoryTableView);
 
         return vBox;
     }//右部视图
@@ -195,20 +250,27 @@ public class com_FX extends Application { //implements Runnable
         java_FX_Chart  FXChart = new java_FX_Chart ();
         Thread F = new Thread(FXChart,"JavaFX 折线图");
         F.start(); //开始添加节点线程
+        javaFXLine = F;     //线程赋值
+
 
         xAxis = new CategoryAxis();
-        yAxis = new NumberAxis(0,100,10);
+        yAxis = new NumberAxis(0,15,0.2);
         xAxis.setLabel("时间");
         yAxis.setLabel("水势");
 
         lineChart = new LineChart(xAxis,yAxis);
         lineChart.setCreateSymbols(false);// 没有具体的点
+        lineChart.setVerticalGridLinesVisible(false);
+
+
         lineChart.autosize();
         lineChart.alternativeColumnFillVisibleProperty();
         //lineChart.setMaxWidth(5);
         String node01 = "节点1";
-        series1.setName(node01);
-        lineChart.getData().addAll(series1);
+        String node02 = "节点2";
+        seriesArray[1].setName(node01);
+        seriesArray[2].setName(node02);
+        lineChart.getData().addAll(seriesArray[1], seriesArray[2]);
     }//水势折线图
 
     /**
@@ -223,7 +285,7 @@ public class com_FX extends Application { //implements Runnable
 
         DatePicker checkInDatePicker = new DatePicker();
         ChoiceTime= new Button("确定日期");
-        ChoiceTime.setOnAction(e -> LogPrint(checkInDatePicker)); //显示日期
+        ChoiceTime.setOnAction(e ->HistoryTableView(checkInDatePicker) ); //显示日期
         gridPane.add(checkInlabel, 0, 0);
         //GridPane.setHalignment(checkInlabel, HPos.LEFT);
         gridPane.add(checkInDatePicker, 0, 1);
@@ -233,9 +295,29 @@ public class com_FX extends Application { //implements Runnable
     }//选择日历时间
 
     /**
+     * 显示历史纪录在表格上
+     * @param checkInDatePicker
+     */
+    public void HistoryTableView(DatePicker checkInDatePicker){
+        HistoryADTable.setHistoryList(FXCollections.observableArrayList());
+        LogTextArea.log( "显示 "+checkInDatePicker.getValue().toString()+" 历史记录" );
+        try {
+            ResultSet rs = DataDao.ReadData(checkInDatePicker.getValue().toString());
+
+            //HistoryTableViewShow.getItems().remove(0,rs.getRow());// 清空表
+
+            HistoryADTable.AddHistoryADTable(rs);
+
+
+            HistoryTableViewShow.setItems(HistoryADTable.getHistoryList()); //表格中插入数据
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    /**
      * AD数据表格 显示
      */
-    public void ADTable(){
+    public TableView<DataAD> ADTable(){
         //Name column
         TableColumn nameColumn = new TableColumn<>("节点号");
         nameColumn.setMinWidth(100);
@@ -258,11 +340,13 @@ public class com_FX extends Application { //implements Runnable
 
 
         tableView = new TableView<>();
-        list = FXCollections.observableArrayList();
-        tableView.setItems(list); //表格中插入数据
+//        list = FXCollections.observableArrayList();
+//        tableView.setItems(list); //表格中插入数据
+
         tableView.getColumns().addAll(nameColumn, priceColumn, quantityColumn,timeColumn);
         tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY); //消除多出的，显示出的效果多了一空列
-        adTable = new ADTable(list);
+
+        return tableView;
     }//AD数据表格 显示
 
     /**
@@ -278,12 +362,34 @@ public class com_FX extends Application { //implements Runnable
         ToggleButton tbResume = new ToggleButton("开始");
         tbResume.setToggleGroup(Group2);
 
-        tbSuspend.setOnAction(event -> suspend(ChartThear));
-        tbResume.setOnAction(event -> resume(ChartThear));
+        Button clearRealALL = new Button("清除数据");
+        Button clearHistoryALL = new Button("清除数据");
 
-        hBox.getChildren().addAll(tbSuspend,tbResume);
+//        tbSuspend.setOnAction(event -> suspend(ChartThear));
+//        tbResume.setOnAction(event -> resume(ChartThear));
+        clearRealALL.setOnAction(e -> clearALL());  //清除表格数据
+
+        //hBox.getChildren().addAll(tbSuspend,tbResume);
+        hBox.getChildren().addAll(clearRealALL);
         return hBox;
     }//开启和暂停线程
+
+    /**
+     * 清除表格数据
+     */
+    public void clearALL(){
+       // RealTableViewClean.setItems(null);
+       // adTable.getRealList().removeAll();
+        // RealTableViewClean.refresh();
+
+        //清空表格信息
+        if(RealADTable.getItemNumber() == 0)
+            return;
+        RealTableViewClean.getItems().remove(0, RealADTable.getItemNumber());
+        RealADTable.setItemNumber(0);
+
+        System.out.println("已经刷新");
+    }
 
     /**
      * 实时监控 和 历史数据
@@ -306,45 +412,6 @@ public class com_FX extends Application { //implements Runnable
         return hBox;
     }//实时监控 和 历史数据
 
-    @Override
-    public void start(Stage primaryStage) throws Exception {
-        primaryStage.setTitle("土壤水势检测系统-sspu");
-        /*************************************/
-
-        HBox hboxTop = HBTopView();      //导航栏 Top
-
-        VBox vboxLeft = VBoxLeftView() ; //左部 Left
-
-        VBox vboxRight = VBoxRightView(); //右部 Right
-/*********Jfree图标显示************/
-//        try {
-//            //从数据库中显示信息
-//            JfreeLineChart.Myrun(MySql_operate.JDBC_connect());
-//            //从数据库中显示信息
-//            ChartPanel cp=new ChartPanel(JfreeLineChart.getJFreeChart());
-//            node.setContent(cp); //将jfree表放在组件上
-//        } catch (SQLException e) {
-//            e.printStackTrace();
-//        }
-        //node.setVisible(false);
-//折线图 javaFX实现
-        JavaFXChart();
-//折线图 JFree实现
-        ChartThear.start();
-
-        /*************************************/
-        bp.setTop(hboxTop);
-        bp.setLeft(vboxLeft);
-        bp.setCenter(lineChart);
-        bp.setRight(vboxRight);
-        //bp.setCenter(node); //添加frame（折线图）组件
-        /*************************************/
-
-        Scene scene = new Scene(bp, 1500, 800);
-        primaryStage.setScene(scene);
-        primaryStage.getIcons().add(new Image("javaFX/Monitor/sspu.png"));
-        primaryStage.show();
-    }
 
     /**
      * 相关结点回传数据
@@ -353,7 +420,7 @@ public class com_FX extends Application { //implements Runnable
      */
     private void ComSent(TextField comSentText, String text) {
         try{
-            int age = Integer.parseInt(comSentText.getText());
+            int age = Integer.parseInt(text);
             System.out.println("选择节点: " + age);
             text = text + ";1";
             port.outputStream.write(text.getBytes());
@@ -362,8 +429,10 @@ public class com_FX extends Application { //implements Runnable
         }catch(NumberFormatException e){
             System.out.println("Error: " + text + " is not a number");
             AlertBox.display("回传节点号","输入格式错误，请输出数字");
-        } catch (IOException e) {
+        }catch (IOException e) {
             e.printStackTrace();
+        }catch(NullPointerException e){
+            AlertBox.display("端口","端口尚未打开");
         }
     }//相关结点回传数据
 
@@ -395,79 +464,80 @@ public class com_FX extends Application { //implements Runnable
 
     }
 
-    public void resume(Thread ChartThear) { //Thread cFX
-        ChartThear.resume();
-//        cFX.resume();
-    }//恢复线程
-
-    public void suspend(Thread ChartThear){ //,Thread cFX
-        ChartThear.suspend();
-//        cFX.suspend();
-    }//暂停线程
+//    public void resume(Thread ChartThear) { //Thread cFX
+//        //ChartThear.resume();
+////        cFX.resume();
+//    }//恢复线程
+//
+//    public void suspend(Thread ChartThear){ //,Thread cFX
+//        //ChartThear.suspend();
+////        cFX.suspend();
+//    }//暂停线程
 
     public void LogPrint(DatePicker checkInDatePicker){
         log("选择日期："+checkInDatePicker.getValue());
         //System.out.println("选择日期："+checkInDatePicker.getValue());
     }
 
-
-
     public static void main(String[] args) {
         Locale.setDefault(Locale.US);
         launch(args);
     }
 
-//    @Override
-//    public void run()
-//    {
-//        //port接收数据封装到list中
-//        Date date ;
-//        while(true){
-//
-//            date = new Date();
-//            String date01;
-//            date01 = String.format("%tT%n",date);  //t的使用
-//
-//            DataAD dataAD = new DataAD();
-//            dataAD.setNode(port.getNode());
-//            dataAD.setNode(port.getMassage());
-//            dataAD.setTime(date01);
-//
-//            try {
-//            list.addAll(dataAD);
-//            double price = (double)rd.nextInt(100);
-//            //String price = port.getMassage();
-//            Double test= Double.parseDouble(port.getMassage());
-//            //list = FXCollections.observableArrayList(port.getNode(),port.getMassage(),port.getBaseAD());
-//
-//            log("最近一次接收AD消息:" + test);
-//
-//            //tableView.getItems().add(list);
-//            }catch (NullPointerException e){
-//
-//            }
-//            //log("正在运行AD线程!!（接收massage）");
-//            System.out.println("正在运行AD线程（接收massage）" );
-//            try {
-//                Thread.sleep(2000);
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-//            break;
+    @Override
+    public void start(Stage primaryStage) throws Exception {
+        primaryStage.setTitle("土壤水势检测系统-sspu");
+        /*************************************/
+
+
+        HBox hboxTop = HBTopView();      //导航栏 Top
+
+        VBox vboxLeft = VBoxLeftView() ; //左部 Left
+
+        VBox vboxRight = VBoxRightView(); //右部 Right
+/*********Jfree图标显示************/
+//        try {
+//            //从数据库中显示信息
+//            JfreeLineChart.Myrun(MySql_operate.JDBC_connect());
+//            //从数据库中显示信息
+//            ChartPanel cp=new ChartPanel(JfreeLineChart.getJFreeChart());
+//            node.setContent(cp); //将jfree表放在组件上
+//        } catch (SQLException e) {
+//            e.printStackTrace();
 //        }
-//
-//    }
+        //node.setVisible(false);
+
+//折线图 javaFX实现
+        JavaFXChart();
+//折线图 JFree实现
+//        ChartThear.start();
+
+        /*************************************/
+        bp.setTop(hboxTop);
+        bp.setLeft(vboxLeft);
+        bp.setCenter(lineChart);
+        bp.setRight(vboxRight);
+        //bp.setCenter(node); //添加frame（折线图）组件
+        /*************************************/
+
+        Scene scene = new Scene(bp, 1500, 800);
+        primaryStage.setScene(scene);
+        primaryStage.getIcons().add(new Image("javaFX/Monitor/sspu.png"));
+        primaryStage.show();
+
+    }
 
     @Override
-    public void stop() throws Exception { //停止线程
+    public void stop() throws Exception {
         super.stop();
+        javaFXLine.stop();      //停止线程
         try {
             port.serialPort.close();
             log(port.toString());
         }catch (Exception e){
-            log("端口没有打开");
+            //log("尚未端口没有打开");
         } //关闭端口
-        ChartThear.stop();
+//        ChartThear.stop();
     }
 }
 

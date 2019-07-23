@@ -12,9 +12,12 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Enumeration;
 import java.util.TooManyListenersException;
+
+import static SQL.MySql_operate.JDBC_connect;
 
 public class PortText implements  SerialPortEventListener { //Runnable,
     /**
@@ -62,6 +65,9 @@ public class PortText implements  SerialPortEventListener { //Runnable,
     } //显示窗口连接信息
 
 
+    /**
+     * 显示PC中开启的端口
+     */
     public void StartComClicked(){
         CommPortIdentifier cpid;
         Enumeration en = CommPortIdentifier.getPortIdentifiers();
@@ -76,7 +82,11 @@ public class PortText implements  SerialPortEventListener { //Runnable,
             }
         }
     }//显示PC中开启的端口
-/************************************/
+
+    /**
+     * 选择接收端口
+     * @param com_choice
+     */
     public void selectPort(ChoiceBox<String> com_choice) {//String portName
         String portName = com_choice.getValue(); //获得选择框的值
         /**
@@ -95,6 +105,9 @@ public class PortText implements  SerialPortEventListener { //Runnable,
         openPort();
     }//选择接收端口
 
+    /**
+     * 开启选择的端口
+     */
     public void openPort() {
         if (commPort == null)
             log(String.format("无法找到名字为'%1$s'的串口！", commPort.getName()));
@@ -106,31 +119,50 @@ public class PortText implements  SerialPortEventListener { //Runnable,
                 /**
                  * 设置波特率/ 校验位 /数据位 /停止位
                  */
-                serialPort.setSerialPortParams(115200,  //波特率
-                        SerialPort.DATABITS_8, 			//校验位
-                        SerialPort.STOPBITS_1, 			//数据位
-                        SerialPort.PARITY_NONE);		//停止位
+                int baudRate = Integer.parseInt(PortSet.getCBbaudRate().getValue());
+                int dateBit = Integer.parseInt(PortSet.getCBdateBit().getValue()); //SerialPort.DATABITS_8
+
+                int parity = 0; //
+                if(PortSet.getCBparity().getValue().equals("NONE"))
+                    parity = 0;
+                int stopBit = Integer.parseInt(PortSet.getCBstopBit().getValue()); //SerialPort.STOPBITS_1
+
+                System.out.println(dateBit + "***" + parity);
+                serialPort.setSerialPortParams(baudRate,  //波特率
+                        dateBit, 			//数据位
+                        stopBit, 			//停止位
+                        parity);		//校验位
 
                 log("实例 SerialPort 成功！");
             } catch (PortInUseException e) {
-                throw new RuntimeException(String.format("端口'%1$s'正在使用中！",
+                /*throw new RuntimeException(String.format("端口'%1$s'正在使用中！",
+                        commPort.getName()));*/
+                AlertBox.display("端口",String.format("端口'%1$s'正在使用中！",
                         commPort.getName()));
             } catch (UnsupportedCommOperationException e) {
                 e.printStackTrace();
             }
         }
     }//打开端口
-/************************************/
+
+    /**
+     * 检测是否有端口
+     */
     private void checkPort() {
         if (commPort == null){
             //throw new RuntimeException("没有选择端口，请使用 " + "selectPort(String portName) 方法选择端口");
             AlertBox.display("端口","没有选择端口");
         }
         if (serialPort == null) {
-            throw new RuntimeException("SerialPort 对象无效！");
+            //throw new RuntimeException("SerialPort 对象无效！");
+            AlertBox.display("端口","没有选择端口");
         }
     }//检测是否有端口
-/************************************/
+
+    /**
+     * 开始读取数据（开始监听端口）
+     * @param time
+     */
     public void startRead(int time) {
         checkPort(); //检测是否有端口
         try {
@@ -160,6 +192,10 @@ public class PortText implements  SerialPortEventListener { //Runnable,
 //        }//开启线程，定时关闭
     }//开始读取数据
 
+    /**
+     * 数据接收的监听处理函数（接收数据）
+     * @param arg0
+     */
     @Override
     public void serialEvent(SerialPortEvent arg0) {//接收串口信息
         switch (arg0.getEventType()) {
@@ -199,11 +235,24 @@ public class PortText implements  SerialPortEventListener { //Runnable,
                     DataBean data = new DataBean();
                     data.setData(s2);
                     DataDao dataDao = new DataDao();
+
+                    Connection conn = null;
                     try {
-                        dataDao.insert(data);  //数据库数据插入
+                        conn= JDBC_connect();
+                        if(conn.isClosed()){
+                            LogTextArea.log("《----没有数据库----》" );
+                            LogTextArea.log("《----不进行数据存储----》" );
+                        }
+                        else
+                            dataDao.insertAD(data);  //数据库数据插入
                     }catch (SQLException e){
+                            e.printStackTrace();
+                            System.out.println("数据存储异常");
+                            LogTextArea.log("数据存储异常");
+                    }catch (Exception e){
                         e.printStackTrace();
-                        System.out.println("数据存储异常");
+                        LogTextArea.log("《----没有数据库----》" );
+                        LogTextArea.log("《----不进行数据存储----》" );
                     }
                     /******************************/
                     log("接收到端口返回数据" + readStr+"(长度为" + readStr.length() + ")" );
@@ -233,6 +282,7 @@ public class PortText implements  SerialPortEventListener { //Runnable,
 
         System.out.println("已经发送消息");
     }
+
     public String getMassage(){
         return this.massage;
     }
@@ -245,6 +295,10 @@ public class PortText implements  SerialPortEventListener { //Runnable,
         return this.massageState;
     }
 
+    /**
+     * 处理AD数据，将接收到的数据格式化
+     * @param com
+     */
     public void ADHandle(String com){
 //        final String REGEX = "\\d;\\d\\d\\d\\d;\\d\\d\\d\\d\r\n";
 //        if(com.matches(REGEX) == false){

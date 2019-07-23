@@ -70,5 +70,4 @@ public class MySql_operate {
         return conn;
     }
 
-
 }
